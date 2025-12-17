@@ -125,29 +125,22 @@ This means CRDT coordination is valuable for:
 crdt-space-sim/
 ├── README.md                 # This file
 ├── CLAUDE.md                 # Development guidelines
-├── PITCH.md                 # Cofounder pitch
-├── requirements.txt         # Python dependencies
+├── LICENSE                   # MIT License
+├── requirements.txt          # Python dependencies
 │
 ├── src/
 │   ├── crdt/
-│   │   ├── __init__.py
-│   │   └── state.py         # CRDT implementations (core)
+│   │   └── state.py          # CRDT implementations (core IP)
 │   │
-│   ├── simulation/
-│   │   ├── __init__.py
-│   │   └── engine.py        # Fair comparison simulation
-│   │
-│   ├── safety/              # (placeholder)
-│   └── visualization/       # (placeholder)
+│   └── simulation/
+│       └── engine.py         # Fair comparison simulation
 │
 ├── tests/
-│   └── test_crdt.py         # CRDT property tests (22 tests)
+│   └── test_crdt.py          # CRDT property tests (22 tests)
 │
-├── output/
-│   └── simulation_results.json
-│
-└── legacy/
-    └── simulation.py        # Original prototype
+└── output/
+    ├── simulation_results.json
+    └── simulation_results.png
 ```
 
 ## 🚀 Quick Start
