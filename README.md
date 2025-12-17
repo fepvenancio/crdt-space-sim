@@ -45,16 +45,19 @@ Ground ◄──► Robot              Partition tolerant
 
 | Scenario | CRDT | Centralized | Winner |
 |----------|------|-------------|--------|
-| LEO (95% reliable, 1 step latency) | 165 steps | 87 steps | Centralized |
-| GEO (90% reliable, 3 step latency) | 153 steps | 106 steps | Centralized |
-| Lunar (80% reliable, 10 step latency) | 146 steps | 172 steps | **CRDT** |
-| Mars (70% reliable, 100 step latency) | 301 steps | 1000+ (timeout) | **CRDT** |
+| LEO (perfect comms) | 145 steps | 91 steps | Centralized |
+| **LEO + eclipse blackouts** | **123 steps** | **275 steps** | **CRDT (55% faster)** |
+| Lunar | 146 steps | 172 steps | **CRDT** |
+| Mars | 301 steps | 1000+ (timeout) | **CRDT** |
 
-**Key finding**: CRDT coordination advantage emerges when latency and partitions dominate. In good comms conditions (LEO/GEO), centralized coordination is actually more efficient. This crossover point is the honest reality.
+**Key finding**: CRDT wins when blackouts/partitions occur—even in LEO. The ISS experiences ~45-minute eclipse periods every 90-minute orbit. During these blackouts, centralized control fails while CRDT robots keep working.
+
+This means CRDT coordination is valuable for:
+- **ISS/space station maintenance** (eclipse blackouts)
+- **Lunar operations** (Earth-Moon latency + far-side blackouts)
+- **Mars missions** (20+ minute latency, solar conjunction)
 
 *Tested with 5 robots, 10 tasks, fair command buffering for centralized baseline*
-
-![Results Chart](simulation_results.png)
 
 ## 🎯 Target Market
 
@@ -106,64 +109,42 @@ Ground ◄──► Robot              Partition tolerant
 ```
 crdt-space-sim/
 ├── README.md                 # This file
-├── CLAUDE.md                 # Claude Code agent instructions
-├── ROADMAP.md               # Development roadmap
-├── PITCH.md                 # Cofounder/investor pitch
+├── CLAUDE.md                 # Development guidelines
+├── PITCH.md                 # Cofounder pitch
 ├── requirements.txt         # Python dependencies
 │
 ├── src/
-│   ├── __init__.py
 │   ├── crdt/
 │   │   ├── __init__.py
-│   │   ├── state.py         # CRDT implementations
-│   │   ├── robot.py         # Robot with CRDT
-│   │   └── merge.py         # Merge operations
+│   │   └── state.py         # CRDT implementations (core)
 │   │
 │   ├── simulation/
 │   │   ├── __init__.py
-│   │   ├── engine.py        # Simulation runner
-│   │   ├── centralized.py   # Baseline comparison
-│   │   └── scenarios.py     # Test scenarios
+│   │   └── engine.py        # Fair comparison simulation
 │   │
-│   ├── safety/
-│   │   ├── __init__.py
-│   │   ├── supervisor.py    # Safety monitoring
-│   │   └── geofence.py      # Keep-out zones
-│   │
-│   └── visualization/
-│       ├── __init__.py
-│       ├── charts.py        # Result charts
-│       └── realtime.py      # Live visualization
+│   ├── safety/              # (placeholder)
+│   └── visualization/       # (placeholder)
 │
 ├── tests/
-│   ├── test_crdt.py         # CRDT unit tests
-│   ├── test_merge.py        # Merge property tests
-│   └── test_safety.py       # Safety tests
-│
-├── docs/
-│   ├── technical.md         # Technical deep-dive
-│   ├── crdt_primer.md       # CRDT explanation
-│   └── space_context.md     # Space industry context
+│   └── test_crdt.py         # CRDT property tests (22 tests)
 │
 ├── output/
-│   ├── simulation_results.json
-│   └── simulation_results.png
+│   └── simulation_results.json
 │
 └── legacy/
-    ├── simulation.py        # Original monolithic simulation
-    └── visualize.py         # Original visualization
+    └── simulation.py        # Original prototype
 ```
 
 ## 🚀 Quick Start
 
 ```bash
 # Clone repository
-git clone https://github.com/[your-username]/crdt-space-sim.git
+git clone https://github.com/fepvenancio/crdt-space-sim.git
 cd crdt-space-sim
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: .\venv\Scripts\Activate
+source venv/bin/activate  # Windows: .\venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -171,8 +152,8 @@ pip install -r requirements.txt
 # Run simulation
 python -m src.simulation.engine
 
-# Generate charts
-python -m src.visualization.charts
+# Run tests
+pytest tests/ -v
 ```
 
 ## 🎯 Current Status
