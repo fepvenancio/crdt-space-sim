@@ -214,9 +214,8 @@ These limitations are documented to be honest with potential technical cofounder
 
 ## 📬 Contact
 
-- **Email**: [your-email]
-- **LinkedIn**: [your-linkedin]
-- **Twitter**: [your-twitter]
+- **Email**: filipeepv@gmail.com
+- **LinkedIn**: [linkedin.com/in/fven](https://www.linkedin.com/in/fven/)
 
 ## 📄 License
 

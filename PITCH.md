@@ -267,7 +267,7 @@ This tests technical fit and working style.
 - **GitHub**: [link to repo]
 - **Demo Video**: [link when created]
 - **Blog Post**: [link when published]
-- **LinkedIn**: [your profile]
+- **LinkedIn**: [linkedin.com/in/fven](https://www.linkedin.com/in/fven/)
 - **Simulation Results**: [link to chart]
 
 ---
@@ -294,7 +294,7 @@ The next step could be [specific suggestion based on conversation].
 
 Would [day/time] work for a follow-up?
 
-[Your name]
+Filip
 ```
 
 ### After Advisor Meeting
@@ -315,7 +315,7 @@ cofounder role, I'd welcome an introduction.
 
 Happy to keep you updated on progress.
 
-[Your name]
+Filip
 ```
 
 ---
