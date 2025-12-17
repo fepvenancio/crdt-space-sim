@@ -89,6 +89,28 @@ class CommsScenario:
             sync_interval=max(1, self.latency_steps)  # Sync at least as often as latency allows
         )
 
+    def generate_partition_schedule(
+        self,
+        max_steps: int,
+        rng: random.Random
+    ) -> Dict[int, int]:
+        """
+        Pre-generate partition events for deterministic comparison.
+
+        Returns dict mapping step -> partition_duration.
+        This ensures both CRDT and centralized runs experience
+        the exact same partition events at the exact same times.
+        """
+        schedule: Dict[int, int] = {}
+        step = 1
+        while step <= max_steps:
+            if rng.random() < self.partition_probability:
+                duration = rng.randint(*self.partition_duration_range)
+                schedule[step] = duration
+                step += duration  # Skip ahead past this partition
+            step += 1
+        return schedule
+
 
 # Predefined scenarios from CLAUDE.md
 SCENARIOS = {
@@ -498,6 +520,7 @@ class SimulationMetrics:
     messages_failed: int = 0
     partition_steps: int = 0  # Steps spent in partition
     idle_steps: int = 0  # Steps where robots had nothing to do
+    actual_work_done: int = 0  # Total work units completed by all robots
 
     @property
     def completion_rate(self) -> float:
@@ -515,8 +538,10 @@ class FairSimulation:
     Key fairness properties:
     1. Same communication budget (sync_interval)
     2. Centralized robots have command buffering
-    3. Both use same CommsModel
-    4. Metrics track actual work done, not just completion
+    3. Both use same CommsModel with SYNCHRONIZED random events
+    4. Same partition schedule for both approaches
+    5. Same message success/failure pattern for fair comparison
+    6. Metrics track actual work done, not just completion
     """
 
     def __init__(
@@ -526,55 +551,115 @@ class FairSimulation:
         scenario: str = "GEO",
         space_size: float = 100.0,
         seed: Optional[int] = None,
-        buffer_size: int = 5
+        buffer_size: int = 5,
+        max_steps: int = 1000
     ):
-        if seed is not None:
-            random.seed(seed)
+        self.seed = seed if seed is not None else 42
+        self.rng = random.Random(self.seed)
 
         self.num_robots = num_robots
         self.num_tasks = num_tasks
         self.scenario = SCENARIOS.get(scenario, SCENARIOS["GEO"])
         self.space_size = space_size
         self.buffer_size = buffer_size
+        self.max_steps = max_steps
 
+        # Generate tasks with main RNG
         self.tasks = self._create_tasks()
 
+        # Pre-generate synchronized random events
+        self._partition_schedule: Dict[int, int] = {}
+        self._message_outcomes: List[bool] = []
+        self._start_positions: List[Vector3] = []
+
+    def _prepare_trial(self) -> None:
+        """
+        Prepare synchronized random events for a single trial.
+
+        This ensures CRDT and centralized runs experience IDENTICAL:
+        - Partition events (same start time, same duration)
+        - Message success/failure patterns
+        - Starting positions
+        """
+        # Create a fresh RNG for this trial
+        trial_rng = random.Random(self.rng.randint(0, 2**32))
+
+        # Pre-generate partition schedule
+        self._partition_schedule = self.scenario.generate_partition_schedule(
+            self.max_steps, trial_rng
+        )
+
+        # Pre-generate many message outcomes (enough for any run)
+        # Each sync round uses roughly num_robots * (num_robots-1) messages for CRDT
+        # or num_robots * 2 for centralized, so pre-generate plenty
+        max_messages = self.max_steps * self.num_robots * self.num_robots * 2
+        self._message_outcomes = [
+            trial_rng.random() < self.scenario.reliability
+            for _ in range(max_messages)
+        ]
+        self._message_index = 0
+
+        # Pre-generate starting positions
+        self._start_positions = [
+            Vector3(
+                self.space_size / 2 + trial_rng.uniform(-10, 10),
+                self.space_size / 2 + trial_rng.uniform(-10, 10),
+                self.space_size / 2 + trial_rng.uniform(-10, 10)
+            )
+            for _ in range(self.num_robots)
+        ]
+
+    def _next_message_succeeds(self, partition_active: bool) -> bool:
+        """Get next pre-determined message outcome."""
+        if partition_active:
+            return False
+        if self._message_index >= len(self._message_outcomes):
+            # Fallback - should not happen with proper pre-generation
+            return self.rng.random() < self.scenario.reliability
+        result = self._message_outcomes[self._message_index]
+        self._message_index += 1
+        return result
+
+    def _reset_message_index(self) -> None:
+        """Reset message index for centralized run to use same sequence."""
+        self._message_index = 0
+
     def _create_tasks(self) -> Dict[str, Task]:
-        """Generate random tasks."""
+        """Generate random tasks using controlled RNG."""
         tasks = {}
         for i in range(self.num_tasks):
             task_id = f"task_{i}"
             tasks[task_id] = Task(
                 task_id=task_id,
                 location=Vector3(
-                    random.uniform(0, self.space_size),
-                    random.uniform(0, self.space_size),
-                    random.uniform(0, self.space_size)
+                    self.rng.uniform(0, self.space_size),
+                    self.rng.uniform(0, self.space_size),
+                    self.rng.uniform(0, self.space_size)
                 ),
-                duration=random.randint(5, 15),
-                task_type=random.choice(["inspect", "repair", "refuel"])
+                duration=self.rng.randint(5, 15),
+                task_type=self.rng.choice(["inspect", "repair", "refuel"])
             )
         return tasks
 
-    def _create_start_positions(self) -> List[Vector3]:
-        """Create consistent starting positions for fair comparison."""
-        return [
-            Vector3(
-                self.space_size / 2 + random.uniform(-10, 10),
-                self.space_size / 2 + random.uniform(-10, 10),
-                self.space_size / 2 + random.uniform(-10, 10)
-            )
-            for _ in range(self.num_robots)
-        ]
+    def _get_start_positions(self) -> List[Vector3]:
+        """Return pre-generated starting positions for fair comparison."""
+        return [deepcopy(pos) for pos in self._start_positions]
 
-    def run_crdt(self, max_steps: int = 1000) -> SimulationMetrics:
-        """Run simulation with CRDT approach."""
+    def run_crdt(self, max_steps: int = None) -> SimulationMetrics:
+        """
+        Run simulation with CRDT approach.
+
+        Uses pre-generated partition schedule and message outcomes
+        for fair comparison with centralized approach.
+        """
+        if max_steps is None:
+            max_steps = self.max_steps
+
         tasks = deepcopy(self.tasks)
         comms = self.scenario.create_comms_model()
 
-        # Create robots with consistent positions
-        random.seed(42)  # Consistent positions
-        positions = self._create_start_positions()
+        # Use pre-generated positions
+        positions = self._get_start_positions()
         robots = [
             CRDTRobot(robot_id=f"robot_{i}", position=pos)
             for i, pos in enumerate(positions)
@@ -582,20 +667,37 @@ class FairSimulation:
 
         metrics = SimulationMetrics(total_tasks=len(tasks))
 
+        # Track actual work done (not just what robots know about)
+        actual_completed: set = set()
+
         for step in range(1, max_steps + 1):
             metrics.steps = step
 
-            # Check for random partition events
-            if random.random() < self.scenario.partition_probability:
-                duration = random.randint(*self.scenario.partition_duration_range)
-                comms.start_partition(duration)
+            # Check pre-generated partition schedule
+            if step in self._partition_schedule:
+                comms.start_partition(self._partition_schedule[step])
 
-            if comms.partition_duration > 0:
+            partition_active = comms.partition_duration > 0
+            if partition_active:
                 metrics.partition_steps += 1
 
             # Each robot acts autonomously
             for robot in robots:
+                # Track work before action
+                old_progress = {
+                    t: robot.state.get_task_progress(t)
+                    for t in tasks.keys()
+                }
+
                 robot.decide_and_act(tasks, step)
+
+                # Track new work done
+                for task_id, task in tasks.items():
+                    new_progress = robot.state.get_task_progress(task_id)
+                    if new_progress > old_progress.get(task_id, 0):
+                        metrics.actual_work_done += (new_progress - old_progress.get(task_id, 0))
+                    if new_progress >= task.duration:
+                        actual_completed.add(task_id)
 
             # Periodic state sync (same interval as centralized comms)
             if step % comms.sync_interval == 0:
@@ -604,44 +706,45 @@ class FairSimulation:
                         # Bidirectional sync attempts
                         metrics.messages_sent += 2
 
-                        if comms.message_succeeds():
+                        if self._next_message_succeeds(partition_active):
                             robot_b.sync_with(robot_a.state)
                         else:
                             metrics.messages_failed += 1
 
-                        if comms.message_succeeds():
+                        if self._next_message_succeeds(partition_active):
                             robot_a.sync_with(robot_b.state)
                         else:
                             metrics.messages_failed += 1
 
             comms.tick()
 
-            # Check completion
-            all_complete = all(
-                any(t in r.state.completed_tasks for r in robots)
-                for t in tasks.keys()
-            )
-
-            if all_complete:
+            # Check completion: ALL tasks actually completed (work done)
+            if len(actual_completed) >= len(tasks):
                 break
 
-        # Count completed tasks
-        completed = set()
-        for robot in robots:
-            completed |= robot.state.completed_tasks
-        metrics.completed_tasks = len(completed)
+        metrics.completed_tasks = len(actual_completed)
 
         return metrics
 
-    def run_centralized(self, max_steps: int = 1000) -> SimulationMetrics:
-        """Run simulation with fair centralized approach."""
+    def run_centralized(self, max_steps: int = None) -> SimulationMetrics:
+        """
+        Run simulation with fair centralized approach.
+
+        Uses pre-generated partition schedule and message outcomes
+        for fair comparison with CRDT approach.
+        """
+        if max_steps is None:
+            max_steps = self.max_steps
+
         tasks = deepcopy(self.tasks)
         comms = self.scenario.create_comms_model()
         ground = FairGroundControl()
 
-        # Create robots with same positions as CRDT run
-        random.seed(42)
-        positions = self._create_start_positions()
+        # Reset message index so centralized uses same message outcomes as CRDT
+        self._reset_message_index()
+
+        # Use pre-generated positions (same as CRDT)
+        positions = self._get_start_positions()
         robots = [
             FairCentralizedRobot(
                 robot_id=f"robot_{i}",
@@ -653,18 +756,18 @@ class FairSimulation:
 
         metrics = SimulationMetrics(total_tasks=len(tasks))
 
-        # Track when we last communicated successfully
-        last_comms_step = 0
+        # Track actual work done (same criteria as CRDT)
+        actual_completed: set = set()
 
         for step in range(1, max_steps + 1):
             metrics.steps = step
 
-            # Check for random partition events
-            if random.random() < self.scenario.partition_probability:
-                duration = random.randint(*self.scenario.partition_duration_range)
-                comms.start_partition(duration)
+            # Check pre-generated partition schedule (SAME as CRDT)
+            if step in self._partition_schedule:
+                comms.start_partition(self._partition_schedule[step])
 
-            if comms.partition_duration > 0:
+            partition_active = comms.partition_duration > 0
+            if partition_active:
                 metrics.partition_steps += 1
 
             # Communication window (same interval as CRDT sync)
@@ -677,16 +780,25 @@ class FairSimulation:
                     robot_commands = commands.get(robot.robot_id, [])
                     if robot_commands:
                         metrics.messages_sent += 1
-                        if comms.message_succeeds():
-                            # Account for latency - commands arrive after delay
+                        if self._next_message_succeeds(partition_active):
                             robot.receive_commands(robot_commands)
-                            last_comms_step = step
                         else:
                             metrics.messages_failed += 1
 
             # Each robot executes from buffer
             for robot in robots:
+                # Track work before action
+                old_progress = dict(robot.work_progress)
+
                 status = robot.execute_step(tasks, step)
+
+                # Track new work done
+                for task_id, task in tasks.items():
+                    new_progress = robot.work_progress.get(task_id, 0)
+                    if new_progress > old_progress.get(task_id, 0):
+                        metrics.actual_work_done += (new_progress - old_progress.get(task_id, 0))
+                    if new_progress >= task.duration:
+                        actual_completed.add(task_id)
 
                 if status is None:
                     metrics.idle_steps += 1
@@ -695,10 +807,10 @@ class FairSimulation:
                         idle_status = {
                             "type": "idle",
                             "robot_id": robot.robot_id,
-                            "completed_tasks": list(robot.completed_tasks)  # Sync completion info
+                            "completed_tasks": list(robot.completed_tasks)
                         }
                         metrics.messages_sent += 1
-                        if comms.message_succeeds():
+                        if self._next_message_succeeds(partition_active):
                             ground.receive_status(robot.robot_id, idle_status, tasks, step)
                         else:
                             metrics.messages_failed += 1
@@ -706,45 +818,64 @@ class FairSimulation:
                     # Try to send status back (same interval)
                     if step % comms.sync_interval == 0:
                         metrics.messages_sent += 1
-                        if comms.message_succeeds():
+                        if self._next_message_succeeds(partition_active):
                             ground.receive_status(robot.robot_id, status, tasks, step)
                         else:
                             metrics.messages_failed += 1
 
             comms.tick()
 
-            # Check completion
-            if len(ground.completed_tasks) >= len(tasks):
+            # Check completion: ALL tasks actually completed (same as CRDT)
+            if len(actual_completed) >= len(tasks):
                 break
 
-        metrics.completed_tasks = len(ground.completed_tasks)
+        metrics.completed_tasks = len(actual_completed)
 
         return metrics
 
-    def run_comparison(self, max_steps: int = 1000, num_trials: int = 10) -> Dict:
+    def run_comparison(self, max_steps: int = None, num_trials: int = 10) -> Dict:
         """
         Run multiple trials comparing both approaches.
 
+        FAIRNESS GUARANTEE: Each trial uses:
+        - Same tasks
+        - Same starting positions
+        - Same partition schedule
+        - Same message success/failure sequence
+
         Returns comprehensive comparison data.
         """
+        if max_steps is None:
+            max_steps = self.max_steps
+
         crdt_results = []
         centralized_results = []
 
         logger.info(f"Running comparison: {self.scenario.name} scenario")
         logger.info(f"Robots: {self.num_robots}, Tasks: {self.num_tasks}")
         logger.info(f"Reliability: {self.scenario.reliability}, Latency: {self.scenario.latency_steps}")
+        logger.info(f"Partition probability: {self.scenario.partition_probability}")
 
         for trial in range(num_trials):
-            # Reset tasks for each trial
+            # Generate new tasks for this trial
             self.tasks = self._create_tasks()
 
+            # Prepare synchronized random events for this trial
+            self._prepare_trial()
+
+            # Run CRDT simulation
             crdt = self.run_crdt(max_steps)
+
+            # Run centralized simulation with SAME random events
             cent = self.run_centralized(max_steps)
 
             crdt_results.append(crdt)
             centralized_results.append(cent)
 
-            logger.info(f"Trial {trial+1}: CRDT={crdt.steps} steps, Centralized={cent.steps} steps")
+            logger.info(
+                f"Trial {trial+1}: CRDT={crdt.steps} steps (partition={crdt.partition_steps}), "
+                f"Centralized={cent.steps} steps (partition={cent.partition_steps}, idle={cent.idle_steps})"
+            )
 
         return self._analyze_results(crdt_results, centralized_results)
 
@@ -798,8 +929,13 @@ class FairSimulation:
         }
 
 
-def run_scenario_sweep(scenarios: List[str] = None, num_trials: int = 5) -> List[Dict]:
-    """Run comparison across multiple scenarios."""
+def run_scenario_sweep(scenarios: List[str] = None, num_trials: int = 5, max_steps: int = 1000) -> List[Dict]:
+    """
+    Run comparison across multiple scenarios.
+
+    Each scenario tests different communication conditions to identify
+    where CRDT coordination outperforms centralized control.
+    """
     if scenarios is None:
         scenarios = ["LEO", "LEO_Eclipse", "Lunar", "Mars"]
 
@@ -809,13 +945,17 @@ def run_scenario_sweep(scenarios: List[str] = None, num_trials: int = 5) -> List
             num_robots=5,
             num_tasks=10,
             scenario=scenario_name,
-            seed=42
+            seed=42,
+            max_steps=max_steps
         )
         result = sim.run_comparison(num_trials=num_trials)
         results.append(result)
 
+        # Report partition statistics
+        avg_partition = result['crdt']['avg_partition_steps']
         print(f"\n{scenario_name}: CRDT {'wins' if result['comparison']['crdt_faster'] else 'loses'} "
               f"({result['comparison']['steps_improvement_pct']:.1f}% difference)")
+        print(f"  Avg partition steps: {avg_partition:.1f}")
 
     return results
 

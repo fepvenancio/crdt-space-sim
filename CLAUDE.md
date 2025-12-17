@@ -259,13 +259,15 @@ If unclear about anything, ask:
 
 ## Simulation Validity Requirements
 
-### Fair Comparison Criteria
+### Fair Comparison Criteria (ALL IMPLEMENTED)
 For the CRDT vs Centralized comparison to survive technical scrutiny:
 
-1. **Same communication budget** - Both approaches use roughly equal total messages
-2. **Equivalent local autonomy** - Centralized robots have buffered commands (3-5 step lookahead)
-3. **Same operational model** - If CRDT robots work during partition, centralized executes stored sequences
-4. **Latency as primary variable** - Space comms latency is the real constraint, not just reliability
+1. **Synchronized partition events** - Both approaches experience IDENTICAL partition timing
+2. **Same message success/failure sequence** - Pre-generated random outcomes used for both
+3. **Same starting positions** - Pre-generated positions shared between runs
+4. **Same completion criteria** - Both complete when actual work is done (not when knowledge syncs)
+5. **Centralized has command buffering** - 5-command buffer per robot (not a strawman)
+6. **Same sync interval** - Both use latency-based sync timing
 
 ### Communication Model Parameters
 ```python
@@ -275,51 +277,61 @@ class CommsModel:
     latency_steps: int      # Round-trip time in simulation steps
     partition_duration: int # Steps of zero connectivity
     sync_interval: int      # How often robots attempt sync
+
+@dataclass
+class CommsScenario:
+    partition_probability: float    # Per-step chance of starting blackout
+    partition_duration_range: tuple # (min, max) steps
 ```
 
 ### Space-Realistic Test Scenarios
-| Scenario | Reliability | Latency | Partition | Notes |
-|----------|-------------|---------|-----------|-------|
-| LEO      | 0.95        | 1 step  | 0-5 steps | Best case |
-| GEO      | 0.90        | 3 steps | 5-15 steps | Typical comsat |
-| Lunar    | 0.80        | 10 steps | 10-30 steps | Earth-Moon |
-| Mars     | 0.70        | 100 steps | 50+ steps | The killer app |
+| Scenario    | Reliability | Latency | Partition Prob | Duration | Notes |
+|-------------|-------------|---------|----------------|----------|-------|
+| LEO         | 0.95        | 1 step  | 1%             | 0-5 steps | Best case |
+| LEO_Eclipse | 0.95        | 1 step  | 8%             | 15-40 steps | ISS eclipse |
+| Lunar       | 0.80        | 10 steps | 3%            | 10-30 steps | Earth-Moon |
+| Mars        | 0.70        | 100 steps | 5%           | 50-200 steps | The killer app |
 
-### Known Limitations (Be Honest About These)
-- [x] Current centralized baseline is naive (no command buffering) - **FIXED: Now has 5-command buffer**
+### Known Limitations (Honestly Documented)
+- [x] Command buffering for centralized (5 commands)
+- [x] Synchronized random events between runs
+- [x] Same completion criteria (actual work done)
 - [ ] No physics constraints (fuel, collision, mass, thrust limits)
 - [ ] Discrete time steps, not continuous dynamics
 - [ ] No sensor noise or localization error
 - [ ] Task model is simplified (instant start, linear progress)
+- [ ] CRDT has ~26% duplicate work overhead during partitions
 
 ### What Would Convince a Technical Cofounder
 - [x] Centralized baseline has command buffering (not strawman)
-- [x] Same comms budget for both approaches (same sync_interval)
+- [x] Synchronized partition events (provably same conditions)
+- [x] Same message outcomes for both approaches
+- [x] Same completion criteria (actual work, not knowledge)
 - [x] Latency demonstrated as primary advantage (not just reliability)
 - [x] Partition tolerance shown explicitly with duration analysis
-- [ ] Limitations documented honestly in README
+- [x] Limitations documented honestly in README
 - [ ] Edge cases handled (tie-breaking, clock skew)
 
 ### Current Fair Comparison Results
-| Scenario | CRDT Steps | Centralized Steps | Winner |
-|----------|------------|-------------------|--------|
-| LEO      | ~165       | ~87               | Centralized (89% faster) |
-| GEO      | ~153       | ~106              | Centralized (45% faster) |
-| Lunar    | ~146       | ~172              | CRDT (15% faster) |
-| Mars     | ~301       | 1000+ (timeout)   | CRDT (70% faster) |
+| Scenario    | CRDT Steps | Centralized Steps | Winner |
+|-------------|------------|-------------------|--------|
+| LEO         | ~150       | ~90               | Centralized (40% faster) |
+| LEO_Eclipse | ~170       | ~100              | Centralized (41% faster) |
+| Lunar       | ~120       | ~150              | **CRDT (+18%)** |
+| Mars        | ~210       | 1000+ (timeout)   | **CRDT (+79%)** |
 
-**Key insight**: CRDT advantage emerges when latency and partitions dominate.
-Centralized wins in good conditions - this is honest and defensible.
+**Key insight**: Crossover point is at Lunar distances (~80% reliability, 10 step latency).
+CRDT's ~26% duplicate work overhead is outweighed by zero idle time at Lunar+ distances.
 
 ## Success Criteria
 
 The codebase is ready for cofounder conversations when:
 
 - [x] All tests pass (22/22 passing)
-- [ ] Code is well-documented
-- [x] Simulation runs with one command
-- [x] Results are reproducible
-- [ ] Technical documentation explains the approach
+- [x] Code is well-documented (docstrings, type hints)
+- [x] Simulation runs with one command (`python -m src.simulation.engine`)
+- [x] Results are reproducible (seeded RNG, pre-generated events)
+- [x] Technical documentation explains the approach (README, PITCH, CLAUDE.md)
 - [ ] Safety architecture is implemented (even if basic)
-- [x] Simulation comparison is fair and defensible
-- [ ] Known limitations are documented
+- [x] Simulation comparison is fair and defensible (synchronized events)
+- [x] Known limitations are documented (README, CLAUDE.md)

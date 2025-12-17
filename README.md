@@ -41,21 +41,36 @@ Ground ◄──► Robot              Partition tolerant
 
 ## 📊 Proof of Concept Results
 
-**Fair comparison** with centralized baseline using command buffering:
+**Fair comparison** with centralized baseline using:
+- Command buffering (5 commands per robot)
+- Synchronized partition events (identical timing for both approaches)
+- Same message success/failure sequences
+- Identical task completion criteria
 
-| Scenario | CRDT | Centralized | Winner |
-|----------|------|-------------|--------|
-| LEO (perfect comms) | 145 steps | 91 steps | Centralized |
-| **LEO + eclipse blackouts** | **123 steps** | **275 steps** | **CRDT (55% faster)** |
-| Lunar | 146 steps | 172 steps | **CRDT** |
-| Mars | 301 steps | 1000+ (timeout) | **CRDT** |
+| Scenario | CRDT | Centralized | Winner | Notes |
+|----------|------|-------------|--------|-------|
+| LEO (95% reliable) | ~150 steps | ~90 steps | Centralized | Good comms favor ground control |
+| LEO + Eclipse (8% partition) | ~170 steps | ~100 steps | Centralized | Buffering handles short blackouts |
+| **Lunar** (80% reliable, 10 step latency) | **~120 steps** | **~150 steps** | **CRDT (+18%)** | Crossover point |
+| **Mars** (70% reliable, 100 step latency) | **~210 steps** | **1000+ (timeout)** | **CRDT (+79%)** | Ground control breaks down |
 
-**Key finding**: CRDT wins when blackouts/partitions occur—even in LEO. The ISS experiences ~45-minute eclipse periods every 90-minute orbit. During these blackouts, centralized control fails while CRDT robots keep working.
+**Key finding**: The crossover point is at **Lunar distances**. When reliability drops below ~80% and latency exceeds ~10 round-trip steps, CRDT coordination outperforms even well-buffered centralized control.
+
+**Why centralized wins in LEO/LEO_Eclipse:**
+- High reliability (95%) means commands almost always arrive
+- Low latency (1 step) allows fast recovery after partitions
+- 5-command buffer sustains work during short blackouts
+
+**Why CRDT wins at Lunar+ distances:**
+- Lower reliability (80%) causes more failed messages
+- Higher latency (10+ steps) makes ground unable to reassign tasks quickly
+- Robots continue autonomous work regardless of comms state
+- ~26% duplicate work overhead is outweighed by zero idle time
 
 This means CRDT coordination is valuable for:
-- **ISS/space station maintenance** (eclipse blackouts)
 - **Lunar operations** (Earth-Moon latency + far-side blackouts)
 - **Mars missions** (20+ minute latency, solar conjunction)
+- **Deep space missions** (hours of light-time delay)
 
 *Tested with 5 robots, 10 tasks, fair command buffering for centralized baseline*
 

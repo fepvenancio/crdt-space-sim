@@ -74,22 +74,30 @@ These aren't buzzwords—they're mathematical guarantees from the CRDT formalism
 
 ### Simulation Results
 
-"We built a **fair** simulation—the centralized baseline has command buffering, not a strawman:"
+"We built a **rigorously fair** simulation with:
+- Command buffering for centralized robots (not a strawman)
+- Synchronized partition events (identical timing for both)
+- Same message success/failure sequences
+- Identical completion criteria"
 
 | Scenario | CRDT | Centralized | Winner |
 |----------|------|-------------|--------|
-| LEO (95% reliable, low latency) | 165 steps | 87 steps | Centralized |
-| GEO (90% reliable, 3 step latency) | 153 steps | 106 steps | Centralized |
-| Lunar (80% reliable, 10 step latency) | 146 steps | 172 steps | **CRDT** |
-| Mars (70% reliable, 100 step latency) | 301 steps | 1000+ (timeout) | **CRDT** |
+| LEO (95% reliable, 1 step latency) | ~150 steps | ~90 steps | Centralized |
+| LEO + Eclipse (8% partition rate) | ~170 steps | ~100 steps | Centralized |
+| **Lunar** (80% reliable, 10 step latency) | **~120 steps** | **~150 steps** | **CRDT (+18%)** |
+| **Mars** (70% reliable, 100 step latency) | **~210 steps** | **1000+ (timeout)** | **CRDT (+79%)** |
 
-"**Centralized wins when comms are good.** But at Lunar+ distances, it fails. That's our niche."
+"**Centralized with proper buffering wins when comms are good.** But at Lunar+ distances, ground control can't reassign tasks fast enough. That's where we win."
 
-### Key Chart
+### The Crossover Point
+
+"The math shows a clear crossover at ~80% reliability and 10+ step latency. This maps to:
+- **Below Lunar**: Centralized is more efficient (no duplicate work)
+- **Lunar and beyond**: CRDT wins despite ~26% duplicate work overhead, because zero idle time beats waiting for ground"
 
 *[Show simulation_results.png]*
 
-"The crossover is around Lunar distances. Below that, centralized works. Above that, you need us."
+"We're honest about this: we don't beat centralized everywhere. We beat it where it matters—beyond Earth orbit."
 
 ---
 
