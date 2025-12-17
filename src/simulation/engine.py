@@ -93,6 +93,7 @@ class CommsScenario:
 # Predefined scenarios from CLAUDE.md
 SCENARIOS = {
     "LEO": CommsScenario("LEO", 0.95, 1, 0.01, (0, 5)),
+    "LEO_Eclipse": CommsScenario("LEO_Eclipse", 0.95, 1, 0.08, (15, 40)),  # ISS-like eclipse blackouts
     "GEO": CommsScenario("GEO", 0.90, 3, 0.02, (5, 15)),
     "Lunar": CommsScenario("Lunar", 0.80, 10, 0.03, (10, 30)),
     "Mars": CommsScenario("Mars", 0.70, 100, 0.05, (50, 200)),
@@ -800,7 +801,7 @@ class FairSimulation:
 def run_scenario_sweep(scenarios: List[str] = None, num_trials: int = 5) -> List[Dict]:
     """Run comparison across multiple scenarios."""
     if scenarios is None:
-        scenarios = ["LEO", "GEO", "Lunar", "Mars"]
+        scenarios = ["LEO", "LEO_Eclipse", "Lunar", "Mars"]
 
     results = []
     for scenario_name in scenarios:
