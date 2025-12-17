@@ -1,0 +1,121 @@
+{
+  "description": "Fair comparison: CRDT vs Centralized (with command buffering)",
+  "scenarios": [
+    {
+      "scenario": "LEO",
+      "config": {
+        "num_robots": 5,
+        "num_tasks": 10,
+        "reliability": 0.95,
+        "latency_steps": 1,
+        "buffer_size": 5
+      },
+      "crdt": {
+        "avg_steps": 164.4,
+        "avg_completion_rate": 1.0,
+        "avg_messages_sent": 3288.0,
+        "avg_messages_failed": 181.6,
+        "avg_partition_steps": 0.6
+      },
+      "centralized": {
+        "avg_steps": 87.0,
+        "avg_completion_rate": 1.0,
+        "avg_messages_sent": 445.6,
+        "avg_messages_failed": 27.6,
+        "avg_partition_steps": 0.6,
+        "avg_idle_steps": 102.6
+      },
+      "comparison": {
+        "steps_improvement_pct": -88.96551724137932,
+        "crdt_faster": false
+      }
+    },
+    {
+      "scenario": "GEO",
+      "config": {
+        "num_robots": 5,
+        "num_tasks": 10,
+        "reliability": 0.9,
+        "latency_steps": 3,
+        "buffer_size": 5
+      },
+      "crdt": {
+        "avg_steps": 153.4,
+        "avg_completion_rate": 1.0,
+        "avg_messages_sent": 1016.0,
+        "avg_messages_failed": 195.8,
+        "avg_partition_steps": 17.0
+      },
+      "centralized": {
+        "avg_steps": 105.6,
+        "avg_completion_rate": 1.0,
+        "avg_messages_sent": 199.2,
+        "avg_messages_failed": 38.2,
+        "avg_partition_steps": 9.0,
+        "avg_idle_steps": 196.8
+      },
+      "comparison": {
+        "steps_improvement_pct": -45.26515151515153,
+        "crdt_faster": false
+      }
+    },
+    {
+      "scenario": "Lunar",
+      "config": {
+        "num_robots": 5,
+        "num_tasks": 10,
+        "reliability": 0.8,
+        "latency_steps": 10,
+        "buffer_size": 5
+      },
+      "crdt": {
+        "avg_steps": 145.8,
+        "avg_completion_rate": 1.0,
+        "avg_messages_sent": 280.0,
+        "avg_messages_failed": 166.4,
+        "avg_partition_steps": 76.8
+      },
+      "centralized": {
+        "avg_steps": 172.0,
+        "avg_completion_rate": 1.0,
+        "avg_messages_sent": 123.4,
+        "avg_messages_failed": 52.2,
+        "avg_partition_steps": 56.0,
+        "avg_idle_steps": 519.8
+      },
+      "comparison": {
+        "steps_improvement_pct": 15.232558139534877,
+        "crdt_faster": true
+      }
+    },
+    {
+      "scenario": "Mars",
+      "config": {
+        "num_robots": 5,
+        "num_tasks": 10,
+        "reliability": 0.7,
+        "latency_steps": 100,
+        "buffer_size": 5
+      },
+      "crdt": {
+        "avg_steps": 301.2,
+        "avg_completion_rate": 1.0,
+        "avg_messages_sent": 56.0,
+        "avg_messages_failed": 56.0,
+        "avg_partition_steps": 297.2
+      },
+      "centralized": {
+        "avg_steps": 1000.0,
+        "avg_completion_rate": 0.0,
+        "avg_messages_sent": 100.0,
+        "avg_messages_failed": 100.0,
+        "avg_partition_steps": 996.0,
+        "avg_idle_steps": 5000.0
+      },
+      "comparison": {
+        "steps_improvement_pct": 69.88,
+        "crdt_faster": true
+      }
+    }
+  ]
+}

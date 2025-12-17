@@ -2,7 +2,7 @@
 
 ## The 30-Second Pitch
 
-> "We're building the coordination layer for autonomous space robot fleets. Using CRDT technology—the same tech behind Figma's multiplayer—our robots can work together without constant ground control. Our simulation shows 85% faster task completion than traditional approaches. We're looking for a technical cofounder with robotics experience to take this from proof-of-concept to product."
+> "We're building the coordination layer for autonomous space robot fleets. Using CRDT technology—the same tech behind Figma's multiplayer—our robots can work together without constant ground control. Our fair simulation shows CRDT coordination outperforms centralized control at Lunar distances and beyond—exactly where centralized fails. We're looking for a technical cofounder with robotics experience to take this from proof-of-concept to product."
 
 ---
 
@@ -74,22 +74,22 @@ These aren't buzzwords—they're mathematical guarantees from the CRDT formalism
 
 ### Simulation Results
 
-"We built a simulation comparing CRDT coordination vs. centralized control at different communication reliability levels:"
+"We built a **fair** simulation—the centralized baseline has command buffering, not a strawman:"
 
-| Comms Reliability | CRDT | Centralized | CRDT Advantage |
-|-------------------|------|-------------|----------------|
-| 30% | 105 steps | 1000+ (timeout) | **90% faster** |
-| 50% | 106 steps | 1000+ (timeout) | **89% faster** |
-| 70% | 132 steps | 1000+ (timeout) | **87% faster** |
-| 90% | 125 steps | 1000+ (timeout) | **88% faster** |
+| Scenario | CRDT | Centralized | Winner |
+|----------|------|-------------|--------|
+| LEO (95% reliable, low latency) | 165 steps | 87 steps | Centralized |
+| GEO (90% reliable, 3 step latency) | 153 steps | 106 steps | Centralized |
+| Lunar (80% reliable, 10 step latency) | 146 steps | 172 steps | **CRDT** |
+| Mars (70% reliable, 100 step latency) | 301 steps | 1000+ (timeout) | **CRDT** |
 
-"At 70% communication reliability—realistic for deep space—centralized control essentially fails. CRDT robots complete 100% of tasks."
+"**Centralized wins when comms are good.** But at Lunar+ distances, it fails. That's our niche."
 
 ### Key Chart
 
 *[Show simulation_results.png]*
 
-"The green line is CRDT. The red line is centralized. The gap is your competitive advantage."
+"The crossover is around Lunar distances. Below that, centralized works. Above that, you need us."
 
 ---
 

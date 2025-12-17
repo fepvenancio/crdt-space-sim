@@ -43,10 +43,10 @@ htmlcov/
 # Type checking
 .mypy_cache/
 
-# Output files (keep structure, ignore generated)
-output/*.json
-output/*.png
-!output/.gitkeep
+# Output files - included for sharing results
+# (uncomment to ignore)
+# output/*.json
+# output/*.png
 
 # OS
 .DS_Store
