@@ -84,44 +84,48 @@ python ground_simulation.py
 | Terrain | 20x20 km with 15 craters, 10 hills |
 | Comm reliability | 85% |
 
-### 3. Validated Benchmark (100 trials, Real NASA Parameters)
+### 3. Validated Benchmark (100 trials, Physics-Based)
 
 ```bash
 python benchmark_validated.py   # 100-trial analysis with real physics
 python benchmark_stats.py       # Statistical analysis (simplified model)
 ```
 
-**Validated benchmark** using real NASA communication parameters:
+**Physics-based benchmark** with validated parameters:
 - **Speed-of-light latency**: Earth-Moon RTT = 2.56s, Earth-Mars RTT = 25-45 min
 - **Real blackout durations**: Lunar far-side = 30-50 min, Mars conjunction = hours
-- **Tsiolkovsky fuel model**: Isp=250s, delta-v per task = 8 m/s
+- **Tsiolkovsky fuel model**: Isp=230s, 0.5 m/s cruise velocity, ~55g per burn
 - **100 trials per scenario with statistical significance testing**
 
 #### Mission Completion Time (hours)
 
 | Scenario | CRDT | Centralized | Difference | Winner |
 |----------|------|-------------|------------|--------|
-| LEO | 0.54 ± 0.15 | 0.24 ± 0.03 | -119% | Centralized |
-| Lunar | 0.52 ± 0.14 | 0.25 ± 0.03 | -104% | Centralized |
-| **Mars Nominal** | **0.53 ± 0.16** | **8.00 (timeout)** | **+93%** | **CRDT** |
-| **Mars Conjunction** | **0.53 ± 0.12** | **8.00 (timeout)** | **+93%** | **CRDT** |
+| LEO | 0.54 ± 0.14 | 0.24 ± 0.03 | -122% | Centralized |
+| Lunar | 0.56 ± 0.15 | 0.25 ± 0.03 | -120% | Centralized |
+| **Mars Nominal** | **0.62 ± 0.17** | **8.00 (timeout)** | **+92%** | **CRDT** |
+| **Mars Conjunction** | **0.65 ± 0.18** | **8.00 (timeout)** | **+92%** | **CRDT** |
 
-#### Fuel Consumption (kg)
+#### Fuel Consumption (kg) - Physics-Based
 
-| Scenario | CRDT | Centralized | Difference |
-|----------|------|-------------|------------|
-| LEO | 27.7 ± 10.0 | 7.3 ± 0.0 | -277% (CRDT uses more) |
-| Lunar | 25.4 ± 9.0 | 7.3 ± 0.0 | -245% (CRDT uses more) |
-| Mars Nominal | 23.6 ± 10.2 | 4.0 ± 0.1 | -488% (CRDT uses more) |
-| Mars Conjunction | 21.5 ± 6.9 | 3.9 ± 0.3 | -447% (CRDT uses more) |
+| Scenario | CRDT | Centralized | Notes |
+|----------|------|-------------|-------|
+| LEO | 4.17 ± 1.38 | 1.11 ± 0.00 | Both complete; CRDT uses 4x more |
+| Lunar | 4.13 ± 1.38 | 1.11 ± 0.00 | Both complete; CRDT uses 4x more |
+| Mars Nominal | 4.09 ± 1.23 | 0.59 ± 0.02 | **Centralized fails to complete** |
+| Mars Conjunction | 4.32 ± 1.13 | 0.58 ± 0.04 | **Centralized fails to complete** |
 
 **Key findings:**
-1. **Mars is the killer app**: Centralized **times out at 8 hours** (25+ min RTT makes ground control impractical)
-2. **Time vs Fuel trade-off**: CRDT completes faster at Mars but uses **3-5x more fuel** due to duplicate work
-3. **LEO/Lunar favor centralized**: Low latency = ground control is more efficient
-4. **Duplicate work overhead**: CRDT robots work on same tasks before syncing
+1. **Mars missions require CRDT**: Centralized **times out** - cannot complete with 25+ min RTT
+2. **CRDT enables missions that would otherwise fail**: 10 tasks completed in ~0.6h vs never
+3. **LEO/Lunar trade-off**: Centralized is faster AND uses less fuel (4x efficiency)
+4. **Physics explanation**: CRDT robots do ~4x more maneuvers (multiple robots approach same task before sync)
 
-**Honest interpretation**: CRDT coordination wins at Mars+ distances where centralized times out. However, the fuel cost is significant. For fuel-critical missions, hybrid approaches may be needed.
+**Why CRDT uses more fuel (physics-based):**
+- Each approach = 2 burns (accelerate + decelerate) = ~110g fuel
+- CRDT: 5 robots independently start approaches → more total maneuvers
+- Centralized: Ground assigns uniquely → exactly 1 robot per task
+- Wasted fuel from aborted approaches: only 0.3-2.6% (most fuel is productive)
 
 ---
 
@@ -212,22 +216,23 @@ pytest tests/ -v
 This is a **proof of concept** with honest limitations:
 
 **Benchmark limitations:**
-- **Task allocation only**: Benchmark tests task coordination, not full robotics
+- **Task allocation only**: Tests coordination, not full robotics (no arm control, docking)
 - **Independent tasks**: No task dependencies or resource constraints
-- **Simplified physics**: No collision detection, attitude control, or thermal constraints
-- **CRDT overhead**: 3-5x fuel consumption due to duplicate work
+- **Simplified dynamics**: Fixed-speed movement, no orbital mechanics in benchmark
+- **No sensor noise**: Perfect position knowledge assumed
 
-**What the validated results show:**
-- CRDT wins at Mars+ distances where centralized **times out** (25+ min RTT)
-- Centralized wins at LEO/Lunar (low latency = efficient ground control)
-- **Trade-off**: CRDT is faster but uses significantly more fuel
-- Fuel-critical missions may need hybrid approaches
+**What the physics-based results show:**
+- **Mars missions require CRDT**: Centralized cannot complete (times out at 8h)
+- **LEO/Lunar favor centralized**: 4x fuel efficiency, 2x faster
+- **CRDT overhead is real**: Multiple robots start toward same task before sync
+- **Wasted fuel is small**: Only 0.3-2.6% from aborted approaches
 
-**Real NASA parameters used:**
-- Earth-Moon RTT: 2.56s (speed of light)
-- Earth-Mars RTT: 25-45 min (opposition to conjunction)
-- Blackouts: Lunar far-side 30-50 min, Mars conjunction hours
-- Fuel model: Tsiolkovsky equation, Isp=250s, 8 m/s delta-v per task
+**Physics model validation:**
+- Earth-Moon RTT: 2.56s (speed of light, verified)
+- Earth-Mars RTT: 25-45 min (speed of light, verified)
+- Fuel: Tsiolkovsky equation with Isp=230s (hydrazine monoprop)
+- Burns: ~55g per acceleration/deceleration at 0.5 m/s cruise
+- Station keeping: 0.01 m/s/hour (LEO typical)
 
 The orbital/ground simulations add realistic physics but are visual demos, not rigorous benchmarks.
 

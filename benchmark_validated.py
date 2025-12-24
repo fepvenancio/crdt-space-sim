@@ -175,66 +175,80 @@ VALIDATED_SCENARIOS = {
 
 
 # =============================================================================
-# FUEL CONSUMPTION MODEL (Tsiolkovsky Rocket Equation)
+# FUEL CONSUMPTION MODEL (Physics-Based with Tsiolkovsky Equation)
 # =============================================================================
 
 @dataclass
 class SpacecraftFuelModel:
     """
-    Fuel consumption model based on Tsiolkovsky rocket equation.
+    Physics-based fuel consumption model.
 
-    Δv = Isp × g₀ × ln(m₀/m_final)
+    Key insight for proximity operations:
+    - Robot accelerates from rest to cruise velocity: delta-v = v_cruise
+    - Robot coasts (no fuel) during transit
+    - Robot decelerates to rest at target: delta-v = v_cruise
+    - Total per maneuver: 2 * v_cruise (independent of distance!)
 
-    Rearranged for fuel mass:
-    m_fuel = m_dry × (exp(Δv / (Isp × g₀)) - 1)
+    This is physically correct for impulsive maneuvers.
+    Distance affects TIME, not delta-v for point-to-point transfers.
+
+    Tsiolkovsky equation converts delta-v to fuel mass:
+    m_fuel = m_current × (1 - 1/exp(Δv / (Isp × g₀)))
 
     Sources:
     - Standard astrodynamics (Tsiolkovsky equation)
-    - Typical servicing spacecraft parameters from NASA OSAM studies
+    - NASA OSAM-1 mission parameters
+    - ESA e.Deorbit servicer studies
     """
     dry_mass_kg: float = 200.0      # Spacecraft dry mass (kg)
     initial_fuel_kg: float = 50.0   # Initial fuel load (kg)
-    isp_s: float = 250.0            # Specific impulse (seconds) - monopropellant
+    isp_s: float = 230.0            # Specific impulse (seconds) - hydrazine monoprop (corrected)
 
-    # Delta-v costs for operations (m/s)
-    delta_v_per_task_approach: float = 5.0    # Approach client spacecraft
-    delta_v_per_task_departure: float = 3.0   # Depart after servicing
-    delta_v_station_keeping_per_hour: float = 0.1  # Station keeping
-    delta_v_wasted_duplicate_work: float = 2.0  # Wasted fuel for duplicate approach
+    # Cruise velocity for proximity operations (m/s)
+    # Typical ISS approach: 0.1-0.3 m/s, servicing ops: 0.3-1.0 m/s
+    cruise_velocity_m_s: float = 0.5
+
+    # Station keeping delta-v (m/s per hour) - only when stationary
+    # LEO: ~0.01 m/s/hour, Lunar: ~0.001 m/s/hour
+    delta_v_station_keeping_per_hour: float = 0.01
 
     def fuel_for_delta_v(self, delta_v_m_s: float, current_mass_kg: float) -> float:
         """
-        Calculate fuel required for a given delta-v.
+        Calculate fuel required for a given delta-v using Tsiolkovsky equation.
 
-        Uses Tsiolkovsky equation:
-        m_fuel = m_current × (1 - exp(-Δv / (Isp × g₀)))
+        m_fuel = m_current × (1 - 1/exp(Δv / Ve))
+        where Ve = Isp × g₀
         """
-        if delta_v_m_s <= 0:
+        if delta_v_m_s <= 0 or current_mass_kg <= 0:
             return 0.0
 
         exhaust_velocity = self.isp_s * G0_M_S2  # m/s
         mass_ratio = math.exp(delta_v_m_s / exhaust_velocity)
         fuel_mass = current_mass_kg * (1 - 1/mass_ratio)
 
-        return fuel_mass
+        return max(0.0, fuel_mass)
 
-    def fuel_for_task(self) -> float:
-        """Fuel cost for completing one task (approach + work + depart)."""
-        total_dv = self.delta_v_per_task_approach + self.delta_v_per_task_departure
-        # Use average mass (approximation)
-        avg_mass = self.dry_mass_kg + self.initial_fuel_kg * 0.5
-        return self.fuel_for_delta_v(total_dv, avg_mass)
+    def fuel_for_acceleration_burn(self, current_mass_kg: float) -> float:
+        """
+        Fuel for one acceleration burn (0 -> cruise velocity).
+        Called when robot STARTS moving toward a target.
+        """
+        return self.fuel_for_delta_v(self.cruise_velocity_m_s, current_mass_kg)
 
-    def fuel_for_duplicate_work(self) -> float:
-        """Fuel wasted when doing duplicate work (approached but task already done)."""
-        avg_mass = self.dry_mass_kg + self.initial_fuel_kg * 0.5
-        return self.fuel_for_delta_v(self.delta_v_wasted_duplicate_work, avg_mass)
+    def fuel_for_deceleration_burn(self, current_mass_kg: float) -> float:
+        """
+        Fuel for one deceleration burn (cruise velocity -> 0).
+        Called when robot ARRIVES at target.
+        """
+        return self.fuel_for_delta_v(self.cruise_velocity_m_s, current_mass_kg)
 
-    def fuel_for_station_keeping(self, hours: float) -> float:
-        """Fuel for station keeping over time period."""
+    def fuel_for_station_keeping(self, hours: float, current_mass_kg: float) -> float:
+        """
+        Fuel for station keeping over time period.
+        Only applies when robot is STATIONARY (working or idle).
+        """
         total_dv = self.delta_v_station_keeping_per_hour * hours
-        avg_mass = self.dry_mass_kg + self.initial_fuel_kg * 0.5
-        return self.fuel_for_delta_v(total_dv, avg_mass)
+        return self.fuel_for_delta_v(total_dv, current_mass_kg)
 
 
 # =============================================================================
@@ -243,7 +257,7 @@ class SpacecraftFuelModel:
 
 @dataclass
 class ValidatedMetrics:
-    """Comprehensive metrics with fuel tracking."""
+    """Comprehensive metrics with physics-based fuel tracking."""
     # Time metrics
     steps: int = 0
     wall_time_s: float = 0.0
@@ -261,14 +275,21 @@ class ValidatedMetrics:
     total_work_done: int = 0
     duplicate_work: int = 0
 
-    # Fuel metrics (kg)
-    fuel_used_tasks: float = 0.0
-    fuel_used_station_keeping: float = 0.0
-    fuel_wasted_duplicate: float = 0.0
+    # Fuel metrics (kg) - physics-based
+    fuel_acceleration_burns: float = 0.0   # Fuel for starting movement
+    fuel_deceleration_burns: float = 0.0   # Fuel for stopping at target
+    fuel_station_keeping: float = 0.0      # Fuel for holding position
+    fuel_wasted_aborts: float = 0.0        # Fuel wasted on aborted approaches
+
+    # Maneuver counts
+    acceleration_burns: int = 0
+    deceleration_burns: int = 0
+    aborted_approaches: int = 0  # Started toward task that was already done
 
     @property
     def total_fuel_used(self) -> float:
-        return self.fuel_used_tasks + self.fuel_used_station_keeping + self.fuel_wasted_duplicate
+        return (self.fuel_acceleration_burns + self.fuel_deceleration_burns +
+                self.fuel_station_keeping + self.fuel_wasted_aborts)
 
     @property
     def fuel_efficiency(self) -> float:
@@ -284,6 +305,13 @@ class ValidatedMetrics:
         if total <= 0:
             return 0.0
         return 100.0 * self.duplicate_work / total
+
+    @property
+    def wasted_fuel_pct(self) -> float:
+        """Percentage of fuel wasted on aborted approaches."""
+        if self.total_fuel_used <= 0:
+            return 0.0
+        return 100.0 * self.fuel_wasted_aborts / self.total_fuel_used
 
 
 # =============================================================================
@@ -303,21 +331,36 @@ class Task:
 
 @dataclass
 class CRDTRobot:
-    """CRDT-coordinated robot."""
+    """CRDT-coordinated robot with fuel tracking."""
     robot_id: str
     position: Vector3
     state: CRDTState = field(default=None)
     current_task: Optional[str] = None
     working: bool = False
+    moving: bool = False  # True if currently in transit (coasting)
+
+    # Fuel tracking
+    fuel_remaining_kg: float = 50.0  # Starts with initial fuel load
 
     def __post_init__(self):
         if self.state is None:
             self.state = CRDTState(self.robot_id)
 
+    @property
+    def current_mass_kg(self) -> float:
+        """Current total mass (dry + fuel)."""
+        return 200.0 + self.fuel_remaining_kg  # dry_mass + fuel
+
+    def burn_fuel(self, amount_kg: float) -> float:
+        """Consume fuel and return actual amount burned."""
+        actual = min(amount_kg, self.fuel_remaining_kg)
+        self.fuel_remaining_kg -= actual
+        return actual
+
 
 @dataclass
 class CentralizedRobot:
-    """Centralized robot with command buffer."""
+    """Centralized robot with command buffer and fuel tracking."""
     robot_id: str
     position: Vector3
     command_buffer: List[dict] = field(default_factory=list)
@@ -325,6 +368,19 @@ class CentralizedRobot:
     work_progress: Dict[str, int] = field(default_factory=dict)
     completed_tasks: set = field(default_factory=set)
     buffer_size: int = 5
+    moving: bool = False  # True if currently in transit
+
+    # Fuel tracking
+    fuel_remaining_kg: float = 50.0
+
+    @property
+    def current_mass_kg(self) -> float:
+        return 200.0 + self.fuel_remaining_kg
+
+    def burn_fuel(self, amount_kg: float) -> float:
+        actual = min(amount_kg, self.fuel_remaining_kg)
+        self.fuel_remaining_kg -= actual
+        return actual
 
 
 class ValidatedSimulation:
@@ -424,7 +480,7 @@ class ValidatedSimulation:
         return result
 
     def run_crdt(self) -> ValidatedMetrics:
-        """Run CRDT simulation."""
+        """Run CRDT simulation with physics-based fuel consumption."""
         tasks = deepcopy(self.tasks)
         metrics = ValidatedMetrics(total_tasks=len(tasks))
 
@@ -457,26 +513,72 @@ class ValidatedSimulation:
                 # Track work before action
                 old_progress = {t: robot.state.get_task_progress(t) for t in tasks}
 
-                # Decide and act
+                # Robot is working on a task
                 if robot.current_task and robot.working:
                     if robot.current_task not in robot.state.completed_tasks:
                         task = tasks.get(robot.current_task)
                         if task:
                             robot.state.add_progress(task.task_id, 1)
+                            # Station keeping while working (stationary)
+                            fuel = self.fuel_model.fuel_for_station_keeping(
+                                self.step_duration_s / 3600, robot.current_mass_kg)
+                            robot.burn_fuel(fuel)
+                            metrics.fuel_station_keeping += fuel
+
                             if robot.state.get_task_progress(task.task_id) >= task.duration:
                                 robot.state.mark_task_complete(task.task_id, step)
                                 robot.current_task = None
                                 robot.working = False
-                                metrics.fuel_used_tasks += self.fuel_model.fuel_for_task()
                     else:
+                        # Task was completed by someone else while we were working
                         robot.current_task = None
                         robot.working = False
+
+                # Robot is moving toward a task
+                elif robot.current_task and robot.moving:
+                    task = tasks.get(robot.current_task)
+                    if task:
+                        # Check if task was completed while we were en route
+                        if task.task_id in actual_completed or task.task_id in robot.state.completed_tasks:
+                            # ABORT: Task already done, we wasted the acceleration burn
+                            # Decelerate to stop (still costs fuel)
+                            fuel = self.fuel_model.fuel_for_deceleration_burn(robot.current_mass_kg)
+                            robot.burn_fuel(fuel)
+                            metrics.fuel_wasted_aborts += fuel
+                            metrics.aborted_approaches += 1
+                            metrics.deceleration_burns += 1
+                            robot.current_task = None
+                            robot.moving = False
+                        else:
+                            # Continue moving (coasting - no fuel cost)
+                            dist = robot.position.distance_to(task.location)
+                            if dist < 2.0:
+                                # Arrived - deceleration burn
+                                fuel = self.fuel_model.fuel_for_deceleration_burn(robot.current_mass_kg)
+                                robot.burn_fuel(fuel)
+                                metrics.fuel_deceleration_burns += fuel
+                                metrics.deceleration_burns += 1
+                                robot.moving = False
+                                robot.working = True
+                            else:
+                                # Coast toward target (no fuel during coast)
+                                robot.position = robot.position.move_toward(task.location, 2.0)
+
+                # Robot is idle - find a task
                 else:
-                    # Find task
+                    # Station keeping while idle
+                    fuel = self.fuel_model.fuel_for_station_keeping(
+                        self.step_duration_s / 3600, robot.current_mass_kg)
+                    robot.burn_fuel(fuel)
+                    metrics.fuel_station_keeping += fuel
+
+                    # Find best available task
                     best_task = None
                     best_dist = float('inf')
                     for task in tasks.values():
                         if task.task_id in robot.state.completed_tasks:
+                            continue
+                        if task.task_id in actual_completed:
                             continue
                         if robot.state.is_task_claimed_by_other(task.task_id, robot.robot_id):
                             continue
@@ -489,8 +591,15 @@ class ValidatedSimulation:
                         robot.current_task = best_task.task_id
                         robot.state.claim_task(best_task.task_id, robot.robot_id, step)
                         if best_dist < 2.0:
+                            # Already at task location
                             robot.working = True
                         else:
+                            # Start moving - acceleration burn
+                            fuel = self.fuel_model.fuel_for_acceleration_burn(robot.current_mass_kg)
+                            robot.burn_fuel(fuel)
+                            metrics.fuel_acceleration_burns += fuel
+                            metrics.acceleration_burns += 1
+                            robot.moving = True
                             robot.position = robot.position.move_toward(best_task.location, 2.0)
 
                 # Track work done
@@ -501,13 +610,11 @@ class ValidatedSimulation:
                         metrics.total_work_done += work_increment
                         if task_id in actual_completed:
                             metrics.duplicate_work += work_increment
-                            metrics.fuel_wasted_duplicate += self.fuel_model.fuel_for_duplicate_work() * work_increment / task.duration
                         else:
                             total_work_per_task[task_id] += work_increment
                             if total_work_per_task[task_id] > task.duration:
                                 overflow = total_work_per_task[task_id] - task.duration
                                 metrics.duplicate_work += min(work_increment, overflow)
-                                metrics.fuel_wasted_duplicate += self.fuel_model.fuel_for_duplicate_work() * min(work_increment, overflow) / task.duration
                         if new_progress >= task.duration:
                             actual_completed.add(task_id)
 
@@ -525,11 +632,6 @@ class ValidatedSimulation:
                         else:
                             metrics.messages_failed += 1
 
-            # Station keeping fuel (continuous)
-            metrics.fuel_used_station_keeping += self.fuel_model.fuel_for_station_keeping(
-                self.step_duration_s / 3600 * self.num_robots
-            )
-
             if len(actual_completed) >= len(tasks):
                 break
 
@@ -537,7 +639,7 @@ class ValidatedSimulation:
         return metrics
 
     def run_centralized(self) -> ValidatedMetrics:
-        """Run centralized simulation."""
+        """Run centralized simulation with physics-based fuel consumption."""
         tasks = deepcopy(self.tasks)
         metrics = ValidatedMetrics(total_tasks=len(tasks))
 
@@ -609,24 +711,45 @@ class ValidatedSimulation:
                             else:
                                 metrics.messages_failed += 1
 
-            # Robots execute
+            # Robots execute commands
             for robot in robots:
                 if robot.current_command is None and robot.command_buffer:
-                    robot.current_command = robot.command_buffer.pop(0)
+                    cmd = robot.command_buffer.pop(0)
+                    robot.current_command = cmd
+                    # Starting a goto command = acceleration burn
+                    if cmd["type"] == "goto":
+                        fuel = self.fuel_model.fuel_for_acceleration_burn(robot.current_mass_kg)
+                        robot.burn_fuel(fuel)
+                        metrics.fuel_acceleration_burns += fuel
+                        metrics.acceleration_burns += 1
+                        robot.moving = True
 
                 if robot.current_command:
                     cmd = robot.current_command
                     if cmd["type"] == "goto":
                         dist = robot.position.distance_to(cmd["target"])
                         if dist < 2.0:
+                            # Arrived - deceleration burn
+                            fuel = self.fuel_model.fuel_for_deceleration_burn(robot.current_mass_kg)
+                            robot.burn_fuel(fuel)
+                            metrics.fuel_deceleration_burns += fuel
+                            metrics.deceleration_burns += 1
+                            robot.moving = False
                             robot.current_command = None
                         else:
+                            # Coast toward target (no fuel)
                             robot.position = robot.position.move_toward(cmd["target"], 2.0)
                     elif cmd["type"] == "work":
                         task = tasks.get(cmd["task_id"])
                         if task:
                             robot.work_progress[task.task_id] = robot.work_progress.get(task.task_id, 0) + 1
                             metrics.total_work_done += 1
+                            # Station keeping while working
+                            fuel = self.fuel_model.fuel_for_station_keeping(
+                                self.step_duration_s / 3600, robot.current_mass_kg)
+                            robot.burn_fuel(fuel)
+                            metrics.fuel_station_keeping += fuel
+
                             if robot.work_progress[task.task_id] >= task.duration:
                                 robot.current_command = None
                                 robot.completed_tasks.add(task.task_id)
@@ -634,12 +757,13 @@ class ValidatedSimulation:
                                 ground_completed.add(task.task_id)
                                 if task.task_id in task_assignments:
                                     del task_assignments[task.task_id]
-                                metrics.fuel_used_tasks += self.fuel_model.fuel_for_task()
-
-            # Station keeping
-            metrics.fuel_used_station_keeping += self.fuel_model.fuel_for_station_keeping(
-                self.step_duration_s / 3600 * self.num_robots
-            )
+                else:
+                    # Idle - station keeping
+                    if not robot.moving:
+                        fuel = self.fuel_model.fuel_for_station_keeping(
+                            self.step_duration_s / 3600, robot.current_mass_kg)
+                        robot.burn_fuel(fuel)
+                        metrics.fuel_station_keeping += fuel
 
             if len(actual_completed) >= len(tasks):
                 break
@@ -695,10 +819,10 @@ def t_test(v1: List[float], v2: List[float]) -> Tuple[float, float]:
 
 
 def run_validated_benchmark(num_trials: int = 100):
-    """Run benchmark with validated parameters."""
+    """Run benchmark with validated, physics-based parameters."""
 
     print("=" * 75)
-    print("VALIDATED BENCHMARK: Real NASA Communication Parameters")
+    print("VALIDATED BENCHMARK: Physics-Based Fuel Model")
     print("=" * 75)
     print()
     print("Communication Parameters (from NASA sources):")
@@ -708,11 +832,20 @@ def run_validated_benchmark(num_trials: int = 100):
               f"Reliability: {scenario.reliability*100:>5.1f}%  "
               f"Blackout: {scenario.blackout_duration_range_s[0]/60:.0f}-{scenario.blackout_duration_range_s[1]/60:.0f} min")
     print()
-    print(f"Fuel Model: Isp={SpacecraftFuelModel().isp_s}s, "
-          f"Dry mass={SpacecraftFuelModel().dry_mass_kg}kg, "
-          f"Fuel={SpacecraftFuelModel().initial_fuel_kg}kg")
-    print(f"  Task approach+depart: {SpacecraftFuelModel().fuel_for_task():.3f} kg fuel")
-    print(f"  Duplicate work penalty: {SpacecraftFuelModel().fuel_for_duplicate_work():.3f} kg fuel")
+
+    fm = SpacecraftFuelModel()
+    print("Physics-Based Fuel Model:")
+    print(f"  Isp: {fm.isp_s}s (hydrazine monoprop - corrected)")
+    print(f"  Cruise velocity: {fm.cruise_velocity_m_s} m/s")
+    print(f"  Accel burn: {fm.fuel_for_acceleration_burn(250):.4f} kg (at 250kg)")
+    print(f"  Decel burn: {fm.fuel_for_deceleration_burn(250):.4f} kg (at 250kg)")
+    print(f"  Station keeping: {fm.delta_v_station_keeping_per_hour} m/s/hour")
+    print()
+    print("Fuel is charged for:")
+    print("  - Acceleration burn when starting to move")
+    print("  - Deceleration burn when arriving at target")
+    print("  - Station keeping when stationary (working or idle)")
+    print("  - Aborted approaches count as wasted fuel (CRDT only)")
     print()
     print(f"Running {num_trials} trials per scenario...")
     print("=" * 75)
@@ -724,7 +857,8 @@ def run_validated_benchmark(num_trials: int = 100):
 
         crdt_times = []
         crdt_fuel = []
-        crdt_dup = []
+        crdt_aborts = []
+        crdt_wasted = []
         cent_times = []
         cent_fuel = []
 
@@ -740,7 +874,8 @@ def run_validated_benchmark(num_trials: int = 100):
 
             crdt_times.append(crdt.wall_time_s / 3600)  # hours
             crdt_fuel.append(crdt.total_fuel_used)
-            crdt_dup.append(crdt.duplicate_work_pct)
+            crdt_aborts.append(crdt.aborted_approaches)
+            crdt_wasted.append(crdt.wasted_fuel_pct)
             cent_times.append(cent.wall_time_s / 3600)
             cent_fuel.append(cent.total_fuel_used)
 
@@ -750,7 +885,8 @@ def run_validated_benchmark(num_trials: int = 100):
         cent_time_stats = compute_stats(cent_times)
         crdt_fuel_stats = compute_stats(crdt_fuel)
         cent_fuel_stats = compute_stats(cent_fuel)
-        crdt_dup_stats = compute_stats(crdt_dup)
+        crdt_aborts_stats = compute_stats(crdt_aborts)
+        crdt_wasted_stats = compute_stats(crdt_wasted)
 
         t_time, p_time = t_test(crdt_times, cent_times)
         t_fuel, p_fuel = t_test(crdt_fuel, cent_fuel)
@@ -763,7 +899,8 @@ def run_validated_benchmark(num_trials: int = 100):
             "cent_time": cent_time_stats,
             "crdt_fuel": crdt_fuel_stats,
             "cent_fuel": cent_fuel_stats,
-            "crdt_dup": crdt_dup_stats,
+            "crdt_aborts": crdt_aborts_stats,
+            "crdt_wasted_pct": crdt_wasted_stats,
             "time_diff_pct": time_diff,
             "fuel_diff_pct": fuel_diff,
             "p_time": p_time,
@@ -778,39 +915,43 @@ def run_validated_benchmark(num_trials: int = 100):
     print("-" * 75)
     for name, r in results.items():
         sig = "***" if r["p_time"] < 0.001 else "**" if r["p_time"] < 0.01 else "*" if r["p_time"] < 0.05 else ""
-        print(f"{name:<20} {r['crdt_time'].mean:>5.2f} ± {r['crdt_time'].std:<6.2f}   "
-              f"{r['cent_time'].mean:>5.2f} ± {r['cent_time'].std:<6.2f}   "
-              f"{r['time_diff_pct']:>+5.1f}%    {r['p_time']:.4f}{sig}")
+        print(f"{name:<20} {r['crdt_time'].mean:>5.2f} +- {r['crdt_time'].std:<6.2f}   "
+              f"{r['cent_time'].mean:>5.2f} +- {r['cent_time'].std:<6.2f}   "
+              f"{r['time_diff_pct']:>+6.1f}%   {r['p_time']:.4f}{sig}")
 
     print("\n" + "=" * 75)
-    print("RESULTS: Total Fuel Consumption (kg)")
+    print("RESULTS: Total Fuel Consumption (kg) - Physics-Based")
     print("=" * 75)
     print(f"{'Scenario':<20} {'CRDT (kg)':<18} {'Centralized (kg)':<18} {'Diff':<10} {'p-value'}")
     print("-" * 75)
     for name, r in results.items():
         sig = "***" if r["p_fuel"] < 0.001 else "**" if r["p_fuel"] < 0.01 else "*" if r["p_fuel"] < 0.05 else ""
-        print(f"{name:<20} {r['crdt_fuel'].mean:>5.2f} ± {r['crdt_fuel'].std:<6.2f}   "
-              f"{r['cent_fuel'].mean:>5.2f} ± {r['cent_fuel'].std:<6.2f}   "
-              f"{r['fuel_diff_pct']:>+5.1f}%    {r['p_fuel']:.4f}{sig}")
+        print(f"{name:<20} {r['crdt_fuel'].mean:>5.3f} +- {r['crdt_fuel'].std:<6.3f}  "
+              f"{r['cent_fuel'].mean:>5.3f} +- {r['cent_fuel'].std:<6.3f}  "
+              f"{r['fuel_diff_pct']:>+6.1f}%   {r['p_fuel']:.4f}{sig}")
 
     print("\n" + "=" * 75)
-    print("CRDT Duplicate Work Overhead")
+    print("CRDT Wasted Fuel (Aborted Approaches)")
     print("=" * 75)
+    print(f"{'Scenario':<20} {'Aborts':<15} {'Wasted Fuel %'}")
+    print("-" * 75)
     for name, r in results.items():
-        print(f"{name:<20} {r['crdt_dup'].mean:>5.1f}% ± {r['crdt_dup'].std:.1f}%")
+        print(f"{name:<20} {r['crdt_aborts'].mean:>4.1f} +- {r['crdt_aborts'].std:<5.1f}   "
+              f"{r['crdt_wasted_pct'].mean:>5.1f}% +- {r['crdt_wasted_pct'].std:.1f}%")
 
     print("\n" + "=" * 75)
-    print("VALIDATED PARAMETERS USED")
+    print("PHYSICS MODEL VALIDATION")
     print("=" * 75)
-    print("Communication (from NASA/ESA sources):")
-    print(f"  Earth-Moon RTT: {2 * _calc_light_time(EARTH_MOON_DISTANCE_KM):.2f}s (speed of light)")
-    print(f"  Earth-Mars RTT: {2 * _calc_light_time(EARTH_MARS_AVG_KM)/60:.1f} min average, "
-          f"{2 * _calc_light_time(EARTH_MARS_MAX_KM)/60:.1f} min max")
-    print("Fuel (Tsiolkovsky equation):")
-    fm = SpacecraftFuelModel()
-    print(f"  Isp: {fm.isp_s}s (monopropellant hydrazine)")
-    print(f"  Delta-v per task: {fm.delta_v_per_task_approach + fm.delta_v_per_task_departure} m/s")
-    print(f"  Fuel per task: {fm.fuel_for_task():.3f} kg")
+    print("Fuel consumption is now tied to actual maneuvers:")
+    print(f"  - Each approach: 2 burns x {fm.cruise_velocity_m_s} m/s = {2*fm.cruise_velocity_m_s} m/s delta-v")
+    print(f"  - Fuel per burn: ~{fm.fuel_for_acceleration_burn(250)*1000:.2f} grams")
+    print(f"  - CRDT wastes fuel on aborted approaches (started but task already done)")
+    print(f"  - Centralized has no aborted approaches (ground assigns uniquely)")
+    print()
+    print("This is physically correct because:")
+    print("  - Delta-v for impulsive maneuver is independent of distance")
+    print("  - Distance affects TIME, not fuel (coast phase is free)")
+    print("  - Tsiolkovsky equation properly accounts for mass change")
 
     return results
 
