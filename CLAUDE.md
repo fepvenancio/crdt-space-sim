@@ -48,12 +48,11 @@ def merge(self, other: 'CRDTRobotState') -> None:
 ### File Organization
 
 ```
-src/crdt/       - CRDT implementations (core IP)
-src/simulation/ - Simulation engine
-src/safety/     - Safety-critical code (extra careful here)
-src/visualization/ - Charts and displays
-tests/          - Mirror src/ structure
-docs/           - Technical documentation
+orbital_simulation.py  - 3D orbital refueling demo
+ground_simulation.py   - 2D ground operations demo
+src/crdt/              - CRDT implementations (core IP)
+src/simulation/        - Benchmark comparison engine
+tests/                 - CRDT property tests
 ```
 
 ### Naming Conventions
@@ -107,45 +106,32 @@ assert state == state_copy
 
 ## Current Tasks Backlog
 
-### P0 - Critical (Do First)
+### Completed
+- [x] Package structure with proper imports
+- [x] CRDT property tests (22 tests, commutativity/associativity/idempotency)
+- [x] 3D orbital simulation with real physics
+- [x] 2D ground simulation with terrain/LoS
+- [x] Type hints and docstrings
+- [x] Fair benchmark comparison
 
-1. **Refactor into proper package structure**
-   - Move monolithic `simulation.py` into `src/` modules
-   - Create proper `__init__.py` files
-   - Ensure imports work: `from src.crdt import CRDTRobotState`
+### P0 - Next Up
 
-2. **Add unit tests for CRDT properties**
-   - Test commutativity: `merge(A,B) == merge(B,A)`
-   - Test associativity
-   - Test idempotency
-   - Use `pytest` and property-based testing with `hypothesis`
-
-3. **Add hardware failure model**
-   ```python
-   class HardwareFailureModel:
-       seu_rate: float = 0.001      # Single event upset (radiation)
-       sensor_noise: float = 0.5    # Position uncertainty meters
-       comms_latency: float = 0.0   # Additional delay
-   ```
-
-4. **Implement SafetySupervisor**
+1. **Implement SafetySupervisor**
    - Watchdog timer
    - Geofence checking
    - Collision prediction
    - E-stop broadcast
 
-### P1 - Important (This Week)
+2. **Add hardware failure model**
+   - SEU (single event upset) from radiation
+   - Sensor noise
+   - Additional comms latency
 
-5. **Add type hints everywhere**
-6. **Add docstrings to all public functions**
-7. **Create technical documentation**
-8. **Improve visualization** - add 3D plot option
+### P1 - Future
 
-### P2 - Nice to Have
-
-9. **Add FastAPI endpoint** for running simulations
-10. **Add real-time web visualization**
-11. **Containerize with Docker**
+3. **ROS2 integration** - `rclpy` nodes for each robot
+4. **Web visualization** - FastAPI + real-time dashboard
+5. **Docker containerization**
 
 ## How To Help Me Build
 
@@ -183,26 +169,20 @@ When I ask you to work on this project:
 ## Commands Reference
 
 ```bash
-# Run simulation
-python -m src.simulation.engine
+# Run 3D orbital simulation (interactive)
+python orbital_simulation.py
 
-# Run specific scenario
-python -m src.simulation.engine --reliability 0.5 --robots 10
+# Run 2D ground simulation (interactive)
+python ground_simulation.py
+
+# Run benchmark comparison
+python -m src.simulation.engine
 
 # Run tests
 pytest tests/ -v
 
 # Run tests with coverage
 pytest tests/ --cov=src --cov-report=html
-
-# Type checking
-mypy src/
-
-# Lint
-ruff check src/
-
-# Generate charts
-python -m src.visualization.charts
 ```
 
 ## Don't Do
@@ -244,10 +224,11 @@ python -m src.visualization.charts
 ## Files That Matter Most
 
 ```
-src/crdt/state.py      - Core CRDT implementation (THE IP)
-src/simulation/engine.py - Main simulation loop
-src/safety/supervisor.py - Safety monitoring
-tests/test_crdt.py     - CRDT property tests
+src/crdt/state.py        - Core CRDT implementation (THE IP)
+orbital_simulation.py    - 3D orbital demo with real physics
+ground_simulation.py     - 2D ground demo with terrain
+src/simulation/engine.py - Benchmark comparison
+tests/test_crdt.py       - CRDT property tests (22 tests)
 ```
 
 ## Questions To Ask Me
