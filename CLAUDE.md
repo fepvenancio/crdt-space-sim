@@ -1,5 +1,7 @@
 # CLAUDE.md - Claude Code Agent Instructions
 
+You are an expert Python developer specializing in simulations and 3D visualizations.
+
 ## Project Context
 
 This is a **CRDT-based space robotics coordination system** proof of concept. The goal is to demonstrate that distributed CRDT coordination outperforms centralized ground control for multi-robot space operations.
