@@ -1,5 +1,7 @@
 # CLAUDE.md - Claude Code Agent Instructions
 
+You are an expert Python developer specializing in simulations and 3D visualizations.
+
 ## Project Context
 
 This is a **CRDT-based space robotics coordination system** proof of concept. The goal is to demonstrate that distributed CRDT coordination outperforms centralized ground control for multi-robot space operations.
@@ -46,12 +48,12 @@ def merge(self, other: 'CRDTRobotState') -> None:
 ### File Organization
 
 ```
-src/crdt/       - CRDT implementations (core IP)
-src/simulation/ - Simulation engine
-src/safety/     - Safety-critical code (extra careful here)
-src/visualization/ - Charts and displays
-tests/          - Mirror src/ structure
-docs/           - Technical documentation
+orbital_simulation.py  - 3D orbital refueling demo
+ground_simulation.py   - 2D ground operations demo
+benchmark_stats.py     - 100-trial statistical analysis
+src/crdt/              - CRDT implementations (core IP)
+src/simulation/        - Benchmark comparison engine
+tests/                 - CRDT property tests
 ```
 
 ### Naming Conventions
@@ -105,45 +107,34 @@ assert state == state_copy
 
 ## Current Tasks Backlog
 
-### P0 - Critical (Do First)
+### Completed
+- [x] Package structure with proper imports
+- [x] CRDT property tests (22 tests, commutativity/associativity/idempotency)
+- [x] 3D orbital simulation with real physics
+- [x] 2D ground simulation with terrain/LoS
+- [x] Type hints and docstrings
+- [x] Fair benchmark comparison
+- [x] **100-trial statistical benchmark with p-values**
+- [x] Duplicate work tracking and overhead measurement
 
-1. **Refactor into proper package structure**
-   - Move monolithic `simulation.py` into `src/` modules
-   - Create proper `__init__.py` files
-   - Ensure imports work: `from src.crdt import CRDTRobotState`
+### P0 - Next Up
 
-2. **Add unit tests for CRDT properties**
-   - Test commutativity: `merge(A,B) == merge(B,A)`
-   - Test associativity
-   - Test idempotency
-   - Use `pytest` and property-based testing with `hypothesis`
-
-3. **Add hardware failure model**
-   ```python
-   class HardwareFailureModel:
-       seu_rate: float = 0.001      # Single event upset (radiation)
-       sensor_noise: float = 0.5    # Position uncertainty meters
-       comms_latency: float = 0.0   # Additional delay
-   ```
-
-4. **Implement SafetySupervisor**
+1. **Implement SafetySupervisor**
    - Watchdog timer
    - Geofence checking
    - Collision prediction
    - E-stop broadcast
 
-### P1 - Important (This Week)
+2. **Add hardware failure model**
+   - SEU (single event upset) from radiation
+   - Sensor noise
+   - Additional comms latency
 
-5. **Add type hints everywhere**
-6. **Add docstrings to all public functions**
-7. **Create technical documentation**
-8. **Improve visualization** - add 3D plot option
+### P1 - Future
 
-### P2 - Nice to Have
-
-9. **Add FastAPI endpoint** for running simulations
-10. **Add real-time web visualization**
-11. **Containerize with Docker**
+3. **ROS2 integration** - `rclpy` nodes for each robot
+4. **Web visualization** - FastAPI + real-time dashboard
+5. **Docker containerization**
 
 ## How To Help Me Build
 
@@ -181,26 +172,20 @@ When I ask you to work on this project:
 ## Commands Reference
 
 ```bash
-# Run simulation
-python -m src.simulation.engine
+# Run 3D orbital simulation (interactive)
+python orbital_simulation.py
 
-# Run specific scenario
-python -m src.simulation.engine --reliability 0.5 --robots 10
+# Run 2D ground simulation (interactive)
+python ground_simulation.py
+
+# Run 100-trial statistical benchmark (~2 min)
+python benchmark_stats.py
+
+# Run quick benchmark comparison
+python -m src.simulation.engine
 
 # Run tests
 pytest tests/ -v
-
-# Run tests with coverage
-pytest tests/ --cov=src --cov-report=html
-
-# Type checking
-mypy src/
-
-# Lint
-ruff check src/
-
-# Generate charts
-python -m src.visualization.charts
 ```
 
 ## Don't Do
@@ -242,10 +227,12 @@ python -m src.visualization.charts
 ## Files That Matter Most
 
 ```
-src/crdt/state.py      - Core CRDT implementation (THE IP)
-src/simulation/engine.py - Main simulation loop
-src/safety/supervisor.py - Safety monitoring
-tests/test_crdt.py     - CRDT property tests
+src/crdt/state.py        - Core CRDT implementation (THE IP)
+benchmark_stats.py       - 100-trial statistical analysis
+orbital_simulation.py    - 3D orbital demo with real physics
+ground_simulation.py     - 2D ground demo with terrain
+src/simulation/engine.py - Benchmark engine
+tests/test_crdt.py       - CRDT property tests (22 tests)
 ```
 
 ## Questions To Ask Me
@@ -296,32 +283,35 @@ class CommsScenario:
 - [x] Command buffering for centralized (5 commands)
 - [x] Synchronized random events between runs
 - [x] Same completion criteria (actual work done)
+- [x] Duplicate work tracked and measured (~100% overhead at Lunar)
 - [ ] No physics constraints (fuel, collision, mass, thrust limits)
 - [ ] Discrete time steps, not continuous dynamics
 - [ ] No sensor noise or localization error
 - [ ] Task model is simplified (instant start, linear progress)
-- [ ] CRDT has ~26% duplicate work overhead during partitions
 
 ### What Would Convince a Technical Cofounder
 - [x] Centralized baseline has command buffering (not strawman)
 - [x] Synchronized partition events (provably same conditions)
 - [x] Same message outcomes for both approaches
 - [x] Same completion criteria (actual work, not knowledge)
-- [x] Latency demonstrated as primary advantage (not just reliability)
-- [x] Partition tolerance shown explicitly with duration analysis
+- [x] **100-trial statistical analysis with p-values**
+- [x] **Honest about where CRDT loses (LEO, Lunar tie)**
 - [x] Limitations documented honestly in README
 - [ ] Edge cases handled (tie-breaking, clock skew)
 
-### Current Fair Comparison Results
-| Scenario    | CRDT Steps | Centralized Steps | Winner |
-|-------------|------------|-------------------|--------|
-| LEO         | ~150       | ~90               | Centralized (40% faster) |
-| LEO_Eclipse | ~170       | ~100              | Centralized (41% faster) |
-| Lunar       | ~120       | ~150              | **CRDT (+18%)** |
-| Mars        | ~210       | 1000+ (timeout)   | **CRDT (+79%)** |
+### Statistical Benchmark Results (100 trials)
+| Scenario    | CRDT Steps | Centralized | p-value | Winner |
+|-------------|------------|-------------|---------|--------|
+| LEO         | 164 ± 51   | 86 ± 11     | <0.001  | Centralized |
+| LEO_Eclipse | 158 ± 47   | 102 ± 16    | <0.001  | Centralized |
+| Lunar       | 154 ± 41   | 156 ± 35    | 0.80    | **Tie (not significant)** |
+| Mars        | 252 ± 63   | 1000 (timeout) | <0.001 | **CRDT (+75%)** |
 
-**Key insight**: Crossover point is at Lunar distances (~80% reliability, 10 step latency).
-CRDT's ~26% duplicate work overhead is outweighed by zero idle time at Lunar+ distances.
+**Key insights**:
+1. **Mars is the killer app** - CRDT wins decisively (+75%, p<0.001)
+2. **Lunar is a statistical tie** - No significant difference (p=0.80)
+3. **LEO favors centralized** - Good comms make ground control faster
+4. **CRDT overhead** - ~100% duplicate work at Lunar distances (higher than expected)
 
 ## Success Criteria
 
@@ -329,9 +319,10 @@ The codebase is ready for cofounder conversations when:
 
 - [x] All tests pass (22/22 passing)
 - [x] Code is well-documented (docstrings, type hints)
-- [x] Simulation runs with one command (`python -m src.simulation.engine`)
+- [x] Simulation runs with one command (`python benchmark_stats.py`)
 - [x] Results are reproducible (seeded RNG, pre-generated events)
-- [x] Technical documentation explains the approach (README, PITCH, CLAUDE.md)
-- [ ] Safety architecture is implemented (even if basic)
+- [x] **Statistical significance proven (100 trials, p-values)**
+- [x] Technical documentation explains the approach (README, CLAUDE.md)
 - [x] Simulation comparison is fair and defensible (synchronized events)
-- [x] Known limitations are documented (README, CLAUDE.md)
+- [x] **Honest about limitations and where CRDT loses**
+- [ ] Safety architecture is implemented (even if basic)
