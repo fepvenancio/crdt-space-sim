@@ -84,28 +84,35 @@ python ground_simulation.py
 | Terrain | 20x20 km with 15 craters, 10 hills |
 | Comm reliability | 85% |
 
-### 3. Benchmark Comparison
+### 3. Statistical Benchmark (100 trials)
 
 ```bash
-python -m src.simulation.engine
+python benchmark_stats.py      # Full 100-trial statistical analysis
+python -m src.simulation.engine  # Quick comparison
 ```
 
 **Fair comparison** of CRDT vs centralized control with:
 - Command buffering (5 commands per robot for centralized)
 - Synchronized partition events (identical timing for both)
 - Same message success/failure sequences
+- **100 trials per scenario with statistical significance testing**
 
-| Scenario | CRDT | Centralized | Winner | Why |
-|----------|------|-------------|--------|-----|
-| LEO (95% reliable) | ~150 steps | ~90 steps | Centralized | Good comms favor ground control |
-| LEO + Eclipse | ~170 steps | ~100 steps | Centralized | Buffering handles short blackouts |
-| **Lunar** | **~120 steps** | **~150 steps** | **CRDT (+18%)** | Crossover point |
-| **Mars** | **~210 steps** | **timeout** | **CRDT (+79%)** | Ground control fails |
+| Scenario | CRDT (steps) | Centralized | Difference | p-value | Winner |
+|----------|--------------|-------------|------------|---------|--------|
+| LEO | 164 ± 51 | 86 ± 11 | -90% | <0.001*** | Centralized |
+| LEO + Eclipse | 158 ± 47 | 102 ± 16 | -55% | <0.001*** | Centralized |
+| Lunar | 154 ± 41 | 156 ± 35 | **+1%** | 0.80 | **Tie** |
+| **Mars** | **252 ± 63** | **1000 (timeout)** | **+75%** | **<0.001***** | **CRDT** |
 
-**Key finding**: CRDT wins when reliability < 80% and latency > 10 round-trip steps. This means:
-- Lunar operations (Earth-Moon latency + far-side blackouts)
-- Mars missions (20+ minute latency)
-- Deep space (hours of light-time delay)
+*\* p<0.05, \*\* p<0.01, \*\*\* p<0.001 (statistically significant)*
+
+**Key findings:**
+1. **Mars is the killer app**: CRDT completes 75% faster (p<0.001)
+2. **Lunar is a statistical tie**: No significant difference at 80% reliability
+3. **LEO favors centralized**: Low latency + high reliability = ground control wins
+4. **CRDT overhead**: ~100% duplicate work at Lunar distances (robots work on same tasks before syncing)
+
+**Honest interpretation**: CRDT coordination only shows clear advantage at Mars+ distances where centralized control times out. At Lunar distances, the approaches are equivalent.
 
 ---
 
@@ -133,6 +140,7 @@ python -m src.simulation.engine
 crdt-space-sim/
 ├── orbital_simulation.py    # 3D orbital refueling demo
 ├── ground_simulation.py     # 2D ground operations demo
+├── benchmark_stats.py       # 100-trial statistical analysis
 ├── README.md
 ├── CLAUDE.md                # Development guidelines
 ├── requirements.txt
@@ -141,7 +149,7 @@ crdt-space-sim/
 │   ├── crdt/
 │   │   └── state.py         # CRDT implementations (core IP)
 │   └── simulation/
-│       └── engine.py        # Benchmark comparison
+│       └── engine.py        # Benchmark comparison engine
 │
 └── tests/
     └── test_crdt.py         # 22 property tests
@@ -165,8 +173,8 @@ pip install -r requirements.txt
 python orbital_simulation.py   # 3D orbital (interactive)
 python ground_simulation.py    # 2D ground (interactive)
 
-# Run benchmark
-python -m src.simulation.engine
+# Run statistical benchmark (100 trials, ~2 min)
+python benchmark_stats.py
 
 # Run tests
 pytest tests/ -v
@@ -178,6 +186,7 @@ pytest tests/ -v
 
 - [x] Core CRDT implementation (G-Set, G-Counter, LWW-Register, FWW-Map)
 - [x] Fair benchmark comparison (centralized has command buffering)
+- [x] **100-trial statistical analysis with p-values**
 - [x] 3D orbital simulation with real physics
 - [x] 2D ground simulation with terrain/LoS
 - [x] Unit tests (22/22 passing)
@@ -186,14 +195,20 @@ pytest tests/ -v
 
 ## Known Limitations
 
-This is a **proof of concept**:
+This is a **proof of concept** with honest limitations:
 
-- **Simplified physics**: No collision detection or mass constraints in benchmark
-- **No sensor noise**: Perfect localization assumed
-- **Simple task model**: Linear progress, instant start
-- **No clock skew**: Synchronized timestamps
+**Benchmark limitations:**
+- **Task allocation only**: Benchmark tests task coordination, not full robotics
+- **Independent tasks**: No task dependencies or resource constraints
+- **No physics**: No collision, fuel, or mass constraints in benchmark
+- **CRDT overhead**: ~100% duplicate work at Lunar distances
 
-The orbital and ground simulations add realistic physics but are visual demos, not rigorous benchmarks.
+**What the results actually show:**
+- CRDT wins decisively only at Mars+ distances (100+ step latency)
+- Lunar is a statistical tie (p=0.80, not significant)
+- Centralized wins at LEO with good comms
+
+The orbital/ground simulations add realistic physics but are visual demos, not rigorous benchmarks.
 
 ---
 

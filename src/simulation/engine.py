@@ -521,6 +521,8 @@ class SimulationMetrics:
     partition_steps: int = 0  # Steps spent in partition
     idle_steps: int = 0  # Steps where robots had nothing to do
     actual_work_done: int = 0  # Total work units completed by all robots
+    duplicate_work: int = 0  # Work done on already-completed tasks (CRDT overhead)
+    total_work_required: int = 0  # Sum of all task durations
 
     @property
     def completion_rate(self) -> float:
@@ -666,9 +668,12 @@ class FairSimulation:
         ]
 
         metrics = SimulationMetrics(total_tasks=len(tasks))
+        metrics.total_work_required = sum(t.duration for t in tasks.values())
 
         # Track actual work done (not just what robots know about)
         actual_completed: set = set()
+        # Track total work done per task (to detect duplicate work)
+        total_work_per_task: Dict[str, int] = {t: 0 for t in tasks.keys()}
 
         for step in range(1, max_steps + 1):
             metrics.steps = step
@@ -694,8 +699,18 @@ class FairSimulation:
                 # Track new work done
                 for task_id, task in tasks.items():
                     new_progress = robot.state.get_task_progress(task_id)
-                    if new_progress > old_progress.get(task_id, 0):
-                        metrics.actual_work_done += (new_progress - old_progress.get(task_id, 0))
+                    work_increment = new_progress - old_progress.get(task_id, 0)
+                    if work_increment > 0:
+                        metrics.actual_work_done += work_increment
+                        # Track duplicate work (work on already-completed tasks)
+                        if task_id in actual_completed:
+                            metrics.duplicate_work += work_increment
+                        else:
+                            total_work_per_task[task_id] += work_increment
+                            # Check if this work over-completed the task (multiple robots)
+                            if total_work_per_task[task_id] > task.duration:
+                                overflow = total_work_per_task[task_id] - task.duration
+                                metrics.duplicate_work += min(work_increment, overflow)
                     if new_progress >= task.duration:
                         actual_completed.add(task_id)
 
