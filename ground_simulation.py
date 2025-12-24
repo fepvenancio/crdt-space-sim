@@ -503,6 +503,10 @@ class GroundSimulation:
         self.current_time = 0.0
         self.max_time = MAX_SIMULATION_TIME
 
+        # Force initial CRDT sync at t=0 to prevent race condition where
+        # multiple rovers claim the same task before first sync
+        self._initial_sync()
+
         logger.info(f"Initialized ground simulation:")
         logger.info(f"  Rovers: {num_rovers}")
         logger.info(f"  Tasks: {num_tasks}")
@@ -563,6 +567,19 @@ class GroundSimulation:
             logger.info(f"  Task {i}: {task_type} at ({pos[0]:.2f}, {pos[1]:.2f}) km")
 
         return tasks
+
+    def _initial_sync(self) -> None:
+        """
+        Force synchronization of all rover CRDT states at t=0.
+
+        This prevents the race condition where multiple rovers could claim
+        the same task before the first sync occurs in the simulation loop.
+        """
+        # All rovers sync with each other (full mesh at t=0)
+        for i, rover_a in enumerate(self.rovers):
+            for rover_b in self.rovers[i+1:]:
+                rover_a.sync_with(rover_b.crdt_state)
+                rover_b.sync_with(rover_a.crdt_state)
 
     def step(self, dt: float) -> GroundSimulationState:
         """

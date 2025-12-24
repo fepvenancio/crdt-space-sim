@@ -57,14 +57,14 @@ ISP = 300.0               # Specific impulse (seconds) - bipropellant
 G0 = 9.81e-3              # Standard gravity (km/s²)
 DRY_MASS = 50.0           # Robot dry mass without fuel (kg)
 INITIAL_FUEL = 500.0      # Initial fuel mass (kg) - generous for demo
-MAX_THRUST = 1.0          # Maximum thrust (kN) - high thrust for orbital maneuvers
+MAX_THRUST = 0.05         # Maximum thrust (kN) = 50N - realistic for proximity operations
 MIN_ALTITUDE = 30.0       # Minimum safe altitude above Moon (km)
 MAX_ALTITUDE = 1000.0     # Maximum altitude for operations (km)
 
 # Communication parameters (Lunar scenario)
 RELIABILITY = 0.80        # Message success probability
 SYNC_INTERVAL = 100.0     # Seconds between sync attempts
-PARTITION_PROBABILITY = 0.03  # Per-sync chance of partition starting
+PARTITION_PROBABILITY = 0.08  # Per-sync chance of partition starting (increased for visibility)
 PARTITION_DURATION_RANGE = (100.0, 400.0)  # Partition duration (seconds)
 
 # Simulation parameters
